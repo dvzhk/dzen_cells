@@ -1,18 +1,24 @@
 import argparse
 import sys
 import numpy as np
-import curses
+import subprocess
 import time
 
 
 def check_size(m, n):
-    """Проверка, что  M,N помещается в терминал"""
-    stdscr = curses.initscr()
-    height, width = stdscr.getmaxyx()
+    """Checking m,n is smaller than the size of terminal is"""
 
-    curses.reset_shell_mode()
+    if sys.platform.startswith('freebsd') or sys.platform == 'linux' or sys.platform == 'darwin':
+
+        stty = subprocess.run(["stty", "size"], stdout=subprocess.PIPE)
+
+        height, width = stty.stdout.strip().split(b' ')
+        height, width = int(height), int(width)
+    else:
+        height, width = 25, 80
 
     warn = "Size of cell field bigger than terminal size. Can't display. Choose {} <= {}"
+
     if m <= 0 or n <= 0:
         return f"M,N must be > 0 and be smaller than terminal dimensions({height}x{width})"
 
@@ -28,37 +34,46 @@ def check_size(m, n):
 
 def create_random_start(args):
     """Creating random field"""
-    # print("-----------------------------------")
+
     m, n = args.m, args.n
     checked_field = check_size(m, n)
-    # print("+++++++++++++++++++++++++++++++++++++++")
+
     if checked_field == True:
-        # print("checked_true!!!")
         return np.random.choice(2, size=(m, n))
+
     else:
         sys.exit(checked_field)
 
 
-def loading_field(file):
+def loading_field(args):
     """Loading cell field from file. Assuming it is comma-separated array of ones and zeros"""
+    # print(file, type(file))
+    field_from_file = np.loadtxt(args.file, dtype='int', delimiter=",")
+    m, n = field_from_file.shape
+    checked_field = check_size(m, n)
 
-    field_from_file = np.loadtxt(file, dtype='int', delimiter=",")
-    checked_field = check_size(field_from_file.shape)
-    if checked_field:
+    if checked_field == True:
         return field_from_file
     else:
         sys.exit(checked_field)
 
 
+def help_and_exit(args):
+    args.hlp()
+    sys.exit()
+
+
 def parse_args(args):
     """Parsing arguments in command line"""
-    parser = argparse.ArgumentParser(add_help=True, description='This is a program')
-    subparser = parser.add_subparsers()
+
+    parser = argparse.ArgumentParser(add_help=True, description='Calculating cells states')
+    subparser = parser.add_subparsers(dest="command")
 
     random_parser = subparser.add_parser(
         'random',
-
-        help='Random starting position.')
+        add_help=True,
+        help='Random starting position.',
+        conflict_handler='resolve')
 
     random_parser.add_argument(
         'm',
@@ -77,40 +92,34 @@ def parse_args(args):
     random_parser.set_defaults(func=create_random_start)
 
     file_parser = subparser.add_parser(
-        '-from',
-        # nargs='?',
-        # action="store_true",
-        # dest="from_file",
-        # default=False,
-        help='Read starting position from file.')
+        'from',
+        add_help=True,
+        help='Read starting position from file.',
+        conflict_handler='resolve')
 
     file_parser.add_argument(
-        # '-file',
         dest="file",
         action="store",
-        help='File containing starting position of cells.')
+        help='File containing starting positions of cells. Input file should be simple comma-separated 2-d array of ones and zeros.')
 
-    # random_parser.set_defaults(func=loading_field)
+    file_parser.set_defaults(func=loading_field)
 
+    parser.set_defaults(func=help_and_exit, hlp=parser.print_help)
     return parser.parse_args(args)
 
 
-def count_neighbors(field, i, j, m, n):
+def count_neighbors(field, i, j):
     """Count non-zero cell neighbors"""
     neighbors = 0
 
     for p in (-1, 0, 1):
         for q in (-1, 0, 1):
-            # if p == 0 and q == 0:
-            #    neighbors += 0
-
             if (i + p) >= 0 and (j + q) >= 0:
                 try:
                     neighbors += field[i + p][j + q]
                 except IndexError:
                     pass
 
-    # print("neighbors:", neighbors, i , j)
     return neighbors
 
 
@@ -119,7 +128,7 @@ def transform_field(field):
     new_field = np.zeros(field.shape, dtype=int)
     for i in range(m):
         for j in range(n):
-            cell_neighbors = count_neighbors(field, i, j, m, n)
+            cell_neighbors = count_neighbors(field, i, j)
             if field[i][j] == 0 and cell_neighbors == 3:
                 new_field[i][j] = 1
 
@@ -129,47 +138,47 @@ def transform_field(field):
 
                 elif cell_neighbors in (3, 4):
                     new_field[i][j] = 1
-                    # print(field[i][j], new_field[i][j], i ,j, cell_neighbors)
+
     return new_field
 
 
-def display():
-    try:
-        myscreen = curses.initscr()
-        LogicLoop()
-    finally:
-        curses.endwin()
+def display(field):
+    # n = 0
+    for i in field:
+        # n += 1
+        stroka = ''
+
+        for j in i:
+            stroka += 'X' if j == 1 else '.'
+        print(stroka)
+        # print(str(n) + '\t' + stroka)
+    print()
 
 
 def main():
     params = parse_args(sys.argv[1:])
 
     field = params.func(params)
-    print(field)
-    for i in field:
-        print(i)
 
-    stdscr = curses.initscr()
-    a = 0
-    while 1:
-        a += 1
-        stdscr.refresh()
-        curses.nl()
-        field = transform_field(field)
-        # display = np.array2string(field, max_line_width=field.shape[0], precision=None, suppress_small=None, separator='')
-        # for i in range(field.shape[0]):
-        #    stdscr.addstr(i, 0, (np.array2string(field[i], max_line_width=(field.shape[1]+2), separator='').replace('0','.')))
-        # stdscr.addstr(i+1, 0, '')
-        display_string = np.array2string(field, precision=None, suppress_small=None, separator='')
+    print("Start field of cells:")
+    display(field)
 
-        stdscr.addstr(0, 0, display_string[1:-1])
-        # stdscr.addstr(i+2, 0, str(a))
-        # stdscr.addstr(i+3, 0, np.array2string(field, precision=None, suppress_small=None, separator=''))
-        # print()
-        # print(field)
-        stdscr.addstr('')
+    iteration = 0
+
+    while True:
+        print(time.time())
+        iteration += 1
+        field_new = transform_field(field)
+
+        if (field == field_new).all():
+            break
+        else:
+            field = field_new
+
+        print(f"Iteration {iteration}:")
+        display(field)
+
         time.sleep(1)
-    curses.reset_shell_mode()
 
 
 if __name__ == '__main__':
