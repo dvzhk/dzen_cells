@@ -166,7 +166,7 @@ def main():
     iteration = 0
 
     while True:
-        print(time.time())
+
         iteration += 1
         field_new = transform_field(field)
 
